@@ -58,7 +58,12 @@ body{
   transition:background-color .4s,color .3s;
 }
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
-input,select{font-family:inherit;font-size:14px}
+input,select{font-family:inherit;font-size:16px}
+@media(min-width:768px){input,select{font-size:14px}}
+/* iOS: input date agar rata kiri & seragam tinggi dengan field lain */
+input[type="date"]{-webkit-appearance:none;appearance:none;text-align:left}
+input[type="date"]::-webkit-date-and-time-value{text-align:left}
+input[type="date"]::-webkit-calendar-picker-indicator{margin-left:auto;opacity:.6}
 .hidden{display:none!important}
 
 /* ---------- LOGIN ---------- */
