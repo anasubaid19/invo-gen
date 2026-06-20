@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
 <style>
 :root{
@@ -127,6 +127,8 @@ input,select{font-family:inherit;font-size:14px}
 
 /* layout */
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start}
+.grid>*{min-width:0}
+.card{min-width:0;max-width:100%}
 @media(max-width:920px){.grid{grid-template-columns:1fr}}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:22px}
 .card h2{font-size:14px;font-weight:800;letter-spacing:-.2px;margin-bottom:4px;display:flex;align-items:center;gap:9px}
