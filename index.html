@@ -188,6 +188,9 @@ input,select{font-family:inherit;font-size:14px}
 .total-bar .tv{font-size:21px;font-weight:800;letter-spacing:-.4px}
 
 .actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}
+.saved-note{display:flex;align-items:center;gap:9px;background:var(--brand-soft);color:var(--brand);border-radius:var(--radius-sm);padding:12px 14px;font-size:13.5px;font-weight:700;margin-top:16px}
+.saved-note svg{width:18px;height:18px;flex-shrink:0}
+.saved-note b{font-weight:800;letter-spacing:.2px}
 .actions .btn{width:100%}
 .actions-row{margin-top:10px}
 
@@ -421,21 +424,35 @@ input,select{font-family:inherit;font-size:14px}
           <span class="tv" id="totalView">Rp 0</span>
         </div>
 
-        <div class="actions">
-          <button class="btn btn-outline" onclick="exportPDF()" id="btnPdf">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            PDF
-          </button>
-          <button class="btn btn-outline" onclick="exportDOCX()" id="btnDocx">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            DOCX
-          </button>
-        </div>
-        <div class="actions-row">
+        <div class="actions-row" id="saveRow">
           <button class="btn" onclick="simpanInvoice()" id="btnSimpan">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-            Simpan & Catat Invoice
+            Simpan &amp; Catat Invoice
           </button>
+        </div>
+
+        <div id="exportRow" class="hidden">
+          <div class="saved-note">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            <span>Tercatat: <b id="savedNomor">—</b></span>
+          </div>
+          <div class="card-sub" style="margin:0 0 12px">Invoice sudah masuk database. Silakan unduh file-nya.</div>
+          <div class="actions">
+            <button class="btn btn-outline" onclick="exportPDF()" id="btnPdf">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              Unduh PDF
+            </button>
+            <button class="btn btn-outline" onclick="exportDOCX()" id="btnDocx">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              Unduh DOCX
+            </button>
+          </div>
+          <div class="actions-row">
+            <button class="btn btn-ghost" onclick="newInvoice()" id="btnNew">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="width:17px;height:17px"><path d="M12 5v14M5 12h14"/></svg>
+              Buat Invoice Baru
+            </button>
+          </div>
         </div>
       </div>
 
@@ -568,6 +585,7 @@ let config = {};
 let currentCabang = null;
 let items = [];           // [{label, jumlah, locked}]
 let riwayatData = [];
+let savedNomor = null;    // nomor invoice yang baru tersimpan (mode unduh)
 
 // ============================================================
 //  UTIL
@@ -1136,21 +1154,41 @@ async function simpanInvoice(){
       res=await apiPost(payload);
     }
     toast("Tersimpan: "+res.nomor_invoice,"ok");
-    // pakai nomor invoice ASLI dari server, tampilkan di preview lalu auto-unduh PDF
+    savedNomor = res.nomor_invoice;
+    // tampilkan nomor resmi dari server di preview
     $("nomorText").textContent = res.nomor_invoice;
     $("ipNomor").textContent = "No. " + res.nomor_invoice;
-    try{
-      await generatePDF(res.nomor_invoice);
-    }catch(ePdf){ toast("Tersimpan, tapi PDF gagal: "+ePdf.message,"err"); }
-    // reset sebagian form, refresh nomor
-    $("inpNama").value=""; $("inpKelas").value="";
-    const def=(config.item_rincian_default||"").split(",").map(s=>s.trim()).filter(Boolean);
-    items=def.map(label=>({label,jumlah:0,locked:true}));
-    renderItems();
-    await refreshNomor();
     renderPreview();
+    // kunci form (agar data yang dicetak = yang tercatat) & munculkan tombol unduh
+    lockForm(true);
+    $("savedNomor").textContent = res.nomor_invoice;
+    $("saveRow").classList.add("hidden");
+    $("exportRow").classList.remove("hidden");
   }catch(e){ toast("Gagal simpan: "+e.message,"err"); }
   finally{ btn.disabled=false; btn.innerHTML=old; }
+}
+
+// kunci/buka semua input form
+function lockForm(locked){
+  ["selCabang","inpTanggal","inpMetode","inpNama","inpKelas"].forEach(id=>{ const el=$(id); if(el) el.disabled=locked; });
+  $("itemsBox").querySelectorAll("input").forEach(inp=>{ inp.disabled=locked; });
+  $("itemsBox").querySelectorAll(".del").forEach(b=>{ b.style.pointerEvents=locked?"none":""; b.style.opacity=locked?".35":""; });
+  const addBtn=document.querySelector(".add-item");
+  if(addBtn){ addBtn.style.pointerEvents=locked?"none":""; addBtn.style.opacity=locked?".45":""; }
+}
+
+// kembali ke form kosong untuk invoice berikutnya
+function newInvoice(){
+  savedNomor=null;
+  lockForm(false);
+  $("inpNama").value=""; $("inpKelas").value="";
+  $("inpTanggal").value=new Date().toISOString().slice(0,10);
+  const def=(config.item_rincian_default||"").split(",").map(s=>s.trim()).filter(Boolean);
+  items=def.map(label=>({label,jumlah:0,locked:true}));
+  renderItems();
+  $("exportRow").classList.add("hidden");
+  $("saveRow").classList.remove("hidden");
+  refreshNomor().then(renderPreview);
 }
 
 // ============================================================
