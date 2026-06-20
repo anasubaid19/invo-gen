@@ -7,8 +7,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.2/html2pdf.bundle.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/docx/8.5.0/index.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/docx@8.5.0/build/index.umd.js"></script>
 <style>
 :root{
   --bg:#eef2f7; --bg-grad1:#dbeafe; --bg-grad2:#d1fae5; --bg-grad3:#cffafe;
@@ -37,7 +37,7 @@
   --shadow-lg:0 16px 50px rgba(0,0,0,.5);
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%}
+html,body{height:100%;overflow-x:hidden;max-width:100%}
 body{
   font-family:'Plus Jakarta Sans',system-ui,sans-serif;
   background:var(--bg); color:var(--text);
@@ -198,7 +198,8 @@ input,select{font-family:inherit;font-size:14px}
 .ip-addr{font-size:12.5px;color:#222;line-height:1.55;margin-top:4px}
 .ip-addr a{color:#1155cc;text-decoration:underline}
 .ip-rule{height:2.5px;background:#111;margin:14px 0 4px;border-radius:2px}
-.ip-nomor{text-align:right;font-size:12px;color:#444;font-weight:bold;margin-bottom:14px}
+.ip-title{text-align:center;font-size:17px;font-weight:bold;letter-spacing:4px;color:#111;margin:12px 0 2px}
+.ip-nomor{text-align:center;font-size:12px;color:#444;font-weight:bold;margin-bottom:16px}
 .ip-meta{display:grid;grid-template-columns:1fr 1fr;gap:0 34px;margin-bottom:20px}
 .ip-mrow{display:grid;grid-template-columns:118px 12px 1fr;font-size:13px;padding:3px 0;color:#1a1a1a}
 .ip-mrow .k{color:#333}
@@ -271,8 +272,10 @@ input,select{font-family:inherit;font-size:14px}
 
 @media(max-width:560px){
   .app{padding:14px 14px 110px}
-  #invoicePaper{padding:38px 34px}
   .actions{grid-template-columns:1fr}
+}
+@media(max-width:400px){
+  .row2{grid-template-columns:1fr}
 }
 </style>
 </head>
@@ -421,6 +424,7 @@ input,select{font-family:inherit;font-size:14px}
                   <div class="ip-addr" id="ipAddr"></div>
                 </div>
                 <div class="ip-rule"></div>
+                <div class="ip-title">BUKTI PEMBAYARAN</div>
                 <div class="ip-nomor" id="ipNomor"></div>
                 <div class="ip-meta">
                   <div>
@@ -807,43 +811,151 @@ function formatFoot(s){
 // ============================================================
 //  EXPORT PDF
 // ============================================================
-function invoiceFilename(ext){
-  const nomor = ($("nomorText").textContent||"invoice").replace(/[\/\\]/g,"-");
+function invoiceFilename(nomor, ext){
+  const n = (nomor||$("nomorText").textContent||"invoice").replace(/[\/\\]/g,"-");
   const nama = ($("inpNama").value||"").trim().replace(/\s+/g,"_");
-  return `${nomor}${nama?"_"+nama:""}.${ext}`;
+  return `${n}${nama?"_"+nama:""}.${ext}`;
 }
+
+// muat gambar -> dataURL (untuk watermark logo di PDF)
+function loadImageData(url){
+  return new Promise(resolve=>{
+    const img=new Image();
+    img.crossOrigin="anonymous";
+    img.onload=()=>{
+      try{
+        const cv=document.createElement("canvas");
+        cv.width=img.naturalWidth; cv.height=img.naturalHeight;
+        cv.getContext("2d").drawImage(img,0,0);
+        resolve({dataURL:cv.toDataURL("image/png"), w:img.naturalWidth, h:img.naturalHeight});
+      }catch(e){ resolve(null); }
+    };
+    img.onerror=()=>resolve(null);
+    img.src=url;
+  });
+}
+
+function pdfMoney(n){ return (Number(n)||0)===0 ? "Rp -" : "Rp "+Number(n).toLocaleString("id-ID"); }
+
+// Bangun PDF invoice dengan teks vektor (jsPDF native) — tajam & tidak pernah blank
+async function buildInvoicePDF(nomor){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:"mm", format:"a4", orientation:"portrait"});
+  const c = currentCabang;
+  const total = recalc();
+  const PW=210, M=16, CW=PW-2*M;
+  const amtX = M + CW*0.60;   // posisi kolom nominal (kiri-aligned)
+  let y=18;
+
+  // ---- watermark logo (faded, di belakang) ----
+  if(c.logo_file){
+    const logo = await loadImageData("logos/"+c.logo_file);
+    if(logo){
+      let gOk=true;
+      try{ doc.setGState(new doc.GState({opacity:0.07})); }catch(e){ gOk=false; }
+      if(gOk){
+        const w=PW*0.5, h=w*(logo.h/logo.w);
+        doc.addImage(logo.dataURL,"PNG",(PW-w)/2,(297-h)/2,w,h);
+        try{ doc.setGState(new doc.GState({opacity:1})); }catch(e){}
+      }
+    }
+  }
+
+  // ---- header sekolah ----
+  doc.setTextColor(17,17,17);
+  doc.setFont("helvetica","bold"); doc.setFontSize(13);
+  doc.text(c.nama_cabang||"", M, y); y+=5.6;
+  doc.setFont("helvetica","normal"); doc.setFontSize(9.5);
+  [c.alamat_baris1, c.alamat_baris2].forEach(a=>{ if(a){ doc.text(String(a), M, y); y+=4.4; } });
+  if(c.telp){ doc.text("Telp: "+c.telp, M, y); y+=4.4; }
+  if(c.email){ doc.text("Email: "+c.email, M, y); y+=4.4; }
+  if(c.web){ doc.text("Web: "+c.web, M, y); y+=4.4; }
+  y+=2.5;
+  doc.setLineWidth(0.8); doc.line(M, y, PW-M, y); y+=9;
+
+  // ---- judul ----
+  doc.setFont("helvetica","bold"); doc.setFontSize(15);
+  doc.text("BUKTI PEMBAYARAN", PW/2, y, {align:"center"});
+  doc.setFontSize(9.5);
+  doc.text("No. "+(nomor||""), PW/2, y+5.5, {align:"center"});
+  y+=14;
+
+  // ---- meta dua kolom ----
+  doc.setFontSize(10);
+  const colL=M, colR=M+CW/2+6, labW=28;
+  function pair(x, yy, k, v){
+    doc.setFont("helvetica","normal"); doc.text(k, x, yy);
+    doc.text(":", x+labW, yy);
+    doc.setFont("helvetica","bold"); doc.text(String(v||"-"), x+labW+3, yy);
+  }
+  let yL=y, yR=y;
+  pair(colL,yL,"Diterima dari",$("inpNama").value); yL+=5.8;
+  pair(colL,yL,"Kelas",$("inpKelas").value); yL+=5.8;
+  doc.setFont("helvetica","normal"); doc.text("Terbilang", colL, yL); doc.text(":", colL+labW, yL);
+  doc.setFont("helvetica","bolditalic");
+  const terb = total>0 ? terbilang(total) : "-";
+  const terbLines = doc.splitTextToSize(terb, CW/2-labW-4);
+  doc.text(terbLines, colL+labW+3, yL);
+  const yLend = yL + terbLines.length*4.6;
+  pair(colR,yR,"Tanggal Bayar",fmtTanggal($("inpTanggal").value)); yR+=5.8;
+  pair(colR,yR,"Metode",$("inpMetode").value); yR+=5.8;
+  pair(colR,yR,"Petugas",session.nama); yR+=5.8;
+  y=Math.max(yLend, yR)+6;
+
+  // ---- intro ----
+  doc.setFont("helvetica","normal"); doc.setFontSize(10);
+  doc.text("Dengan rincian pembayaran sebagai berikut:", M, y); y+=7.5;
+
+  // ---- rincian ----
+  items.forEach((it,i)=>{
+    doc.setFont("helvetica","normal"); doc.setFontSize(10); doc.setTextColor(26,26,26);
+    doc.text(String(i+1)+".", M, y);
+    const lbl = doc.splitTextToSize(it.label||"-", amtX-(M+6)-3)[0] || "-";
+    doc.text(lbl, M+6, y);
+    doc.text(pdfMoney(it.jumlah), amtX, y);
+    y+=2.2;
+    doc.setLineWidth(0.1); doc.setDrawColor(205); doc.setLineDashPattern([0.6,0.6],0);
+    doc.line(M, y, PW-M, y);
+    doc.setLineDashPattern([],0); doc.setDrawColor(0);
+    y+=4.8;
+  });
+
+  // ---- jumlah ----
+  y+=1.5; doc.setLineWidth(0.7); doc.line(M, y, PW-M, y); y+=6.5;
+  doc.setFont("helvetica","bold"); doc.setFontSize(11.5); doc.setTextColor(17,17,17);
+  doc.text("Jumlah", M, y); doc.text("Rp "+total.toLocaleString("id-ID"), amtX, y); y+=6.2;
+  doc.setFont("helvetica","normal"); doc.setFontSize(10);
+  doc.text("Pembayaran", M, y); doc.text("Rp "+total.toLocaleString("id-ID"), amtX, y); y+=11;
+
+  // ---- footer box ----
+  const foot=config.nama_penutup||"";
+  if(foot){
+    doc.setFont("helvetica","italic"); doc.setFontSize(9.5);
+    const fl=doc.splitTextToSize(foot, CW-12);
+    const boxH=fl.length*4.7+8;
+    doc.setLineWidth(0.5); doc.setDrawColor(17); doc.rect(M, y, CW, boxH);
+    doc.text(fl, PW/2, y+6, {align:"center"});
+  }
+  return doc;
+}
+
+async function generatePDF(nomor){
+  if(typeof window.jspdf==="undefined"){ toast("Library PDF belum termuat, cek koneksi","err"); return false; }
+  const doc = await buildInvoicePDF(nomor);
+  doc.save(invoiceFilename(nomor,"pdf"));
+  return true;
+}
+
 async function exportPDF(){
   if(!validateForm()) return;
-  const btn = $("btnPdf"); const old = btn.innerHTML;
+  const btn=$("btnPdf"); const old=btn.innerHTML;
   btn.disabled=true; btn.innerHTML='<span class="spin dark"></span>';
-  let holder=null;
   try{
-    try{ await document.fonts.ready; }catch(e){}
-    // Kloning invoice ke area tersembunyi ukuran penuh 794px,
-    // lepas dari transform-scale & scroll container (penyebab blank di mobile).
-    const src=$("invoicePaper");
-    const clone=src.cloneNode(true);
-    clone.style.transform="none";
-    clone.style.boxShadow="none";
-    clone.style.margin="0";
-    holder=document.createElement("div");
-    holder.style.cssText="position:fixed;left:-10000px;top:0;width:794px;background:#ffffff;z-index:-1";
-    holder.appendChild(clone);
-    document.body.appendChild(holder);
-    // beri jeda agar gambar logo (jika ada) sempat dimuat di klon
-    await new Promise(r=>setTimeout(r,120));
-
-    await html2pdf().set({
-      margin:0,
-      filename: invoiceFilename("pdf"),
-      image:{type:"jpeg",quality:0.96},
-      html2canvas:{scale:2,useCORS:true,backgroundColor:"#ffffff",windowWidth:794,width:794},
-      jsPDF:{unit:"mm",format:"a4",orientation:"portrait"},
-      pagebreak:{mode:["avoid-all"]}
-    }).from(clone).save();
-    toast("PDF berhasil dibuat","ok");
+    const nomor = ($("nomorText").textContent||"").replace(/^No\.\s*/,"");
+    const okk = await generatePDF(nomor);
+    if(okk) toast("PDF berhasil dibuat","ok");
   }catch(e){ toast("Gagal membuat PDF: "+e.message,"err"); }
-  finally{ if(holder) holder.remove(); btn.disabled=false; btn.innerHTML=old; }
+  finally{ btn.disabled=false; btn.innerHTML=old; }
 }
 
 // ============================================================
@@ -895,8 +1007,9 @@ async function exportDOCX(){
 
     const doc=new Document({sections:[{properties:{},children:[
       ...headerKids,
-      new Paragraph({border:{bottom:{style:BorderStyle.SINGLE,size:18,color:"111111"}},spacing:{after:60}}),
-      new Paragraph({children:[new TextRun({text:"No. "+($("nomorText").textContent||""),bold:true,size:20})],alignment:AlignmentType.RIGHT,spacing:{after:120}}),
+      new Paragraph({border:{bottom:{style:BorderStyle.SINGLE,size:18,color:"111111"}},spacing:{after:120}}),
+      new Paragraph({children:[new TextRun({text:"BUKTI PEMBAYARAN",bold:true,size:30,characterSpacing:60})],alignment:AlignmentType.CENTER,spacing:{after:40}}),
+      new Paragraph({children:[new TextRun({text:"No. "+($("nomorText").textContent||""),bold:true,size:20})],alignment:AlignmentType.CENTER,spacing:{after:200}}),
       metaTable,
       new Paragraph({children:[new TextRun({text:"Dengan rincian pembayaran sebagai berikut:",size:22})],spacing:{before:160,after:120}}),
       rincianTable,
@@ -905,7 +1018,8 @@ async function exportDOCX(){
     ]}]});
 
     const blob=await Packer.toBlob(doc);
-    downloadBlob(blob, invoiceFilename("docx"));
+    const nomor=($("nomorText").textContent||"");
+    downloadBlob(blob, invoiceFilename(nomor,"docx"));
     toast("DOCX berhasil dibuat","ok");
   }catch(e){ toast("Gagal membuat DOCX: "+e.message,"err"); }
   finally{ btn.disabled=false; btn.innerHTML=old; }
@@ -950,6 +1064,12 @@ async function simpanInvoice(){
       res=await apiPost(payload);
     }
     toast("Tersimpan: "+res.nomor_invoice,"ok");
+    // pakai nomor invoice ASLI dari server, tampilkan di preview lalu auto-unduh PDF
+    $("nomorText").textContent = res.nomor_invoice;
+    $("ipNomor").textContent = "No. " + res.nomor_invoice;
+    try{
+      await generatePDF(res.nomor_invoice);
+    }catch(ePdf){ toast("Tersimpan, tapi PDF gagal: "+ePdf.message,"err"); }
     // reset sebagian form, refresh nomor
     $("inpNama").value=""; $("inpKelas").value="";
     const def=(config.item_rincian_default||"").split(",").map(s=>s.trim()).filter(Boolean);
